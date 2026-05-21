@@ -1,5 +1,5 @@
 {
-  "name": "pi-unicode-demo",
+  "name": "pi-edit-unicode-escape-bug",
   "version": "1.0.0",
   "description": "Minimal reproduction for pi issue #4198: Edit tool Unicode escape mismatch",
   "type": "module",
