@@ -78,11 +78,23 @@ This is a genuine design tension. But it does not justify the error message bein
 
 ### Concrete options
 
-**Option A: Better error diagnostics (zero risk)**
+**Option A: Mention common failure modes in the error message (zero effort, zero risk)**
 
-When `fuzzyFindText` fails, check whether the file contains escape sequences (`\uXXXX`, `\u{XXXX}`) that correspond to Unicode characters in `oldText`. If so, append a specific hint to the error message. This requires no changes to matching logic and carries no risk of incorrect replacements.
+The current error message is:
 
-**Option B: Extend fuzzy matching with an escape-aware tier (low risk)**
+> "Could not find the exact text in ${path}. The old text must match exactly including all whitespace and newlines."
+
+Just change the string to mention common causes:
+
+> "Could not find the exact text in ${path}. The old text must match exactly. Common causes include Unicode escape sequences in the file (e.g., `\u2019`) vs. the actual Unicode character in oldText, or whitespace/newline mismatches. Re-read the file and ensure oldText uses the exact characters as they appear in the source."
+
+No new logic. No detection code. Just a better string literal. The LLM reads the error, re-reads the file, notices `\u2019`, and self-corrects. The LLM *is* the detector.
+
+**Option B: Dynamic escape-mismatch detection in error messages (low effort, low risk)**
+
+When `fuzzyFindText` fails, check whether the file contains escape sequences (`\uXXXX`, `\u{XXXX}`) that correspond to Unicode characters in `oldText`. If so, append a specific hint. This gives precise, targeted guidance but requires writing and testing the detection logic (e.g., the `detectEscapeMismatch` function in the reproduction script).
+
+**Option C: Extend fuzzy matching with an escape-aware tier (medium effort, low risk)**
 
 Add a third tier to `fuzzyFindText`:
 1. Exact match
@@ -91,7 +103,7 @@ Add a third tier to `fuzzyFindText`:
 
 This only activates when both previous tiers fail, so it only helps cases that currently error.
 
-**Option C: Pre-normalize escape sequences (medium risk)**
+**Option D: Pre-normalize escape sequences (medium effort, medium risk)**
 
 Convert `\uXXXX` sequences to their actual characters inside `normalizeForFuzzyMatch`. This is more aggressive — it would affect all fuzzy matching — but it aligns with the existing normalization philosophy.
 
@@ -100,7 +112,7 @@ Convert `\uXXXX` sequences to their actual characters inside `normalizeForFuzzyM
 | Claim | Verdict |
 |---|---|
 | "The LLM used the wrong representation" | **True** — the LLM emitted a literal U+2019 instead of `\u2019` |
-| "The tool can't do anything about this" | **False** — the tool already handles similar cases, and better diagnostics are trivial to add |
+| "The tool can't do anything about this" | **False** — even just mentioning common failure modes in the error string would help |
 | "It's purely an LLM problem" | **Incomplete** — the error message gives zero signal, and the matching layer has an obvious gap |
 
-The most defensible immediate fix is **Option A**: keep matching strict, but make the error message explain *why* it failed and what to try. This respects the matching logic while eliminating the debugging black hole.
+The most defensible immediate fix is **Option A**: change one string literal to mention escape-sequence mismatches as a common cause. The LLM self-diagnoses from there. Zero new logic, zero risk, and it eliminates the debugging black hole.
