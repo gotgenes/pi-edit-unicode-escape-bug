@@ -1,0 +1,16 @@
+{
+  "name": "pi-unicode-demo",
+  "version": "1.0.0",
+  "description": "Minimal reproduction for pi issue #4198: Edit tool Unicode escape mismatch",
+  "type": "module",
+  "scripts": {
+    "repro": "node --experimental-strip-types repro.ts"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "private": true,
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "^0.75.4"
+  }
+}
