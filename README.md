@@ -40,11 +40,9 @@ The script shows:
 
 ## Is this the LLM's fault?
 
-A common reaction to this issue is that the LLM is at fault — it "should have known" the file contains `\u2019` and used that exact sequence in `oldText`. This section argues that framing is incomplete, and that the tool itself has both the precedent and the capability to handle this better.
-
 ### What actually happens
 
-The file contains the six ASCII characters `\u2019`. The LLM's `oldText` contains one actual Unicode character U+2019. After pi's existing `normalizeForFuzzyMatch`:
+After pi's `normalizeForFuzzyMatch`:
 
 | | File content | oldText |
 |---|---|---|
@@ -52,47 +50,41 @@ The file contains the six ASCII characters `\u2019`. The LLM's `oldText` contain
 | After normalization | `crohn\u2019s` (unchanged!) | `crohn's` |
 | Match? | **No** | |
 
-The regex `.replace(/[\u2018\u2019\u201A\u201B]/g, "'")` only matches *actual Unicode characters*, not ASCII escape sequences. So the file's `\u2019` passes through untouched, while the oldText `'` is unchanged (already ASCII). They never align.
+The regex only matches *actual Unicode characters*, not ASCII escape sequences. The file's `\u2019` passes through untouched.
 
 ### Why the tool bears responsibility
 
-**1. The tool already committed to this philosophy.**
+**1. The tool already handles similar cases.**
 
-Pi added fuzzy matching (PR #713) specifically to handle "looks the same, different bytes": smart quotes, em-dashes, non-breaking spaces, and trailing whitespace. The goal was explicitly to forgive "minor formatting differences." A `\u2019` escape sequence producing a right single quotation mark is the *same category* of problem — just an unhandled edge case in the normalization layer.
+Pi added fuzzy matching (PR #713) specifically to handle "looks the same, different bytes": smart quotes, em-dashes, non-breaking spaces, and trailing whitespace. A `\u2019` escape sequence is the same category — just an unhandled edge case.
 
 **2. The error message is actively harmful.**
 
 > "Could not find the exact text in ${path}. The old text must match exactly including all whitespace and newlines."
 
-This tells the LLM nothing actionable. It doesn't say "your text looks similar but uses a different encoding" or "try `\u2019` instead of `'`". The LLM receives this, has no signal about what went wrong, and may retry with equally wrong variations. The reproduction's `detectEscapeMismatch` function proves that a precise, helpful hint can be generated automatically.
+This tells the LLM nothing actionable. It doesn't say "your text looks similar but uses a different encoding" or "try `\u2019` instead of `'`".
 
 **3. The LLM may be reasoning about semantics, not raw bytes.**
 
-In `const x = 'crohn\u2019s'`, the escape sequence evaluates at runtime to U+2019. The LLM may be operating on the *semantic value* of the code rather than its raw source representation. The tool operates at the raw byte level. This is an interface mismatch between two layers with different abstractions, not simple LLM sloppiness.
+In `const x = 'crohn\u2019s'`, the escape sequence evaluates at runtime to U+2019. The LLM may be operating on the *semantic value* of the code rather than its raw source representation. The tool operates at the raw byte level.
 
 ### The fair counter-argument
 
-There is a defensible concern about scope creep: if you handle `\u2019`, what about `\xE2\x80\x99`, `&#8217;`, `\u{2019}`, `&rsquo;`, or language-specific escapes? The tool could become an escape-sequence interpreter for every programming language.
-
-This is a genuine design tension. But it does not justify the error message being useless. Even if auto-matching is deemed too risky, telling the user what actually went wrong is unambiguously the tool's responsibility.
+If you handle `\u2019`, what about `\xE2\x80\x99`, `&#8217;`, `\u{2019}`, `&rsquo;`, or language-specific escapes? Fair concern — but it doesn't justify the error message being useless. Even if auto-matching is too risky, the error message can still mention common causes.
 
 ### Concrete options
 
 **Option A: Mention common failure modes in the error message (zero effort, zero risk)**
 
-The current error message is:
-
-> "Could not find the exact text in ${path}. The old text must match exactly including all whitespace and newlines."
-
-Just change the string to mention common causes:
+Change the error string to mention common causes:
 
 > "Could not find the exact text in ${path}. The old text must match exactly. Common causes include Unicode escape sequences in the file (e.g., `\u2019`) vs. the actual Unicode character in oldText, or whitespace/newline mismatches. Re-read the file and ensure oldText uses the exact characters as they appear in the source."
 
-No new logic. No detection code. Just a better string literal. The LLM reads the error, re-reads the file, notices `\u2019`, and self-corrects. The LLM *is* the detector.
+No new logic — just a better string literal. The LLM reads the hint, re-reads the file, and self-corrects.
 
 **Option B: Dynamic escape-mismatch detection in error messages (low effort, low risk)**
 
-When `fuzzyFindText` fails, check whether the file contains escape sequences (`\uXXXX`, `\u{XXXX}`) that correspond to Unicode characters in `oldText`. If so, append a specific hint. This gives precise, targeted guidance but requires writing and testing the detection logic (e.g., the `detectEscapeMismatch` function in the reproduction script).
+When `fuzzyFindText` fails, check whether the file contains escape sequences (`\uXXXX`, `\u{XXXX}`) that correspond to Unicode characters in `oldText` and append a targeted hint. See the `detectEscapeMismatch` function in the reproduction script.
 
 **Option C: Extend fuzzy matching with an escape-aware tier (medium effort, low risk)**
 
@@ -115,4 +107,4 @@ Convert `\uXXXX` sequences to their actual characters inside `normalizeForFuzzyM
 | "The tool can't do anything about this" | **False** — even just mentioning common failure modes in the error string would help |
 | "It's purely an LLM problem" | **Incomplete** — the error message gives zero signal, and the matching layer has an obvious gap |
 
-The most defensible immediate fix is **Option A**: change one string literal to mention escape-sequence mismatches as a common cause. The LLM self-diagnoses from there. Zero new logic, zero risk, and it eliminates the debugging black hole.
+Option A is a one-line change that addresses the immediate problem.
